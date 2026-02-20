@@ -773,7 +773,10 @@ SyntaxElementMorph.prototype.labelParts = {
             brightness : ['brightness'],
             transparency : ['transparency'],
             '~~' : null,
-            'r-g-b-a' : ['r-g-b-a']
+            'r-g-b-a' : ['r-g-b-a'],
+			"~~~": null,
+			mode: ["mode"],
+			surface: ["surface"]
         }
     },
     '%asp': { // aspect

@@ -6429,6 +6429,8 @@ SpriteMorph.prototype.setBackgroundColor = SpriteMorph.prototype.setColor;
 SpriteMorph.prototype.getPenAttribute = function (attrib) {
     var name = attrib instanceof Array ? attrib[0] : attrib.toString(),
         options = ['hue', 'saturation', 'brightness', 'transparency'];
+    if (name === "surface") return this.sheet ?? "pen trails";
+    if (name === "mode") return ["paint", "erase", "overdraw"].indexOf(this.tool ?? "paint") + 1;
     if (name === 'size') {
         return this.size || 0;
     }
@@ -6444,7 +6446,7 @@ SpriteMorph.prototype.getPenAttribute = function (attrib) {
         ]);
     }
     return this.getColorDimension(options.indexOf(name));
-};
+}
 
 // SpriteMorph layers
 

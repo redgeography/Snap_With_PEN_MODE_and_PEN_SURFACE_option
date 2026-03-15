@@ -57,13 +57,13 @@ BlockMorph, ArgMorph, InputSlotMorph, TemplateSlotMorph, CommandSlotMorph, ZOOM,
 FunctionSlotMorph, MultiArgMorph, ColorSlotMorph, nop, CommentMorph, isNil,
 localize, SVG_Costume, MorphicPreferences, Process, isSnapObject, Variable,
 SyntaxElementMorph, BooleanSlotMorph, normalizeCanvas, contains, Scene,
-Project, CustomHatBlockMorph, SnapVersion*/
+Project, CustomHatBlockMorph, SnapVersion, ADT_SlotMorph*/
 
 /*jshint esversion: 11*/
 
 // Global stuff ////////////////////////////////////////////////////////
 
-modules.store = '2026-February-18';
+modules.store = '2026-March-10';
 
 // XML_Serializer ///////////////////////////////////////////////////////
 /*
@@ -420,6 +420,7 @@ SnapSerializer.prototype.loadScene = function (
     scene.disableDraggingData = model.scene.attributes.dragdata === 'false';
     scene.hideEmptyCategories = model.scene.attributes.empty === 'false';
     scene.hideSprites = model.scene.attributes.blocksonly === 'true';
+    scene.enforceTypes = model.scene.attributes.strict === 'true';
     scene.penColorModel = model.scene.attributes.colormodel === 'hsl' ?
         'hsl' : 'hsv';
     model.notes = model.scene.childNamed('notes');
@@ -1112,8 +1113,10 @@ SnapSerializer.prototype.loadCustomBlocks = function (
         }
         definition.type = child.attributes.type || 'command';
         definition.selector = child.attributes.selector || null;
+        definition.reports = child.attributes.reports || null;
         definition.setPrimitive(child.attributes.primitive || null);
         definition.isHelper = (child.attributes.helper === 'true') || false;
+        definition.enforceTypes = (child.attributes.strict === 'true') || false;
         definition.spaceAbove = (child.attributes.space === 'true') || false;
         definition.semantics = child.attributes.semantics || null;
         definition.isGlobal = (isGlobal === true);
@@ -1235,8 +1238,10 @@ SnapSerializer.prototype.loadCustomizedPrimitives = function (
         }
         definition.type = child.attributes.type || 'command';
         definition.selector = sel || null;
+        definition.reports = child.attributes.reports || null;
         definition.setPrimitive(child.attributes.primitive || null);
         definition.isHelper = (child.attributes.helper === 'true') || false;
+        definition.enforceTypes = (child.attributes.strict === 'true') || false;
         definition.semantics = child.attributes.semantics || null;
         definition.isGlobal = true;
 
@@ -1695,7 +1700,8 @@ SnapSerializer.prototype.loadInput = function (model, input, block, object) {
         input.setColor(this.loadColor(model.contents));
     } else {
         val = this.loadValue(model);
-        if (!isNil(val) && !isNil(input) && input.setContents) {
+        if (!isNil(val) && !isNil(input) && input.setContents &&
+                !(input instanceof ADT_SlotMorph)) {
             // checking whether "input" is nil should not
             // be necessary, but apparently is after retina support
             // was added.
@@ -2143,7 +2149,7 @@ Scene.prototype.toXML = function (serializer) {
     SpriteMorph.prototype.blocks = this.blocks;
 
     xml = serializer.format(
-        '<scene name="@"%%%%%%%%%>' +
+        '<scene name="@"%%%%%%%%%%>' +
             '<notes>$</notes>' +
             '%' +
             '<hidden>$</hidden>' +
@@ -2167,6 +2173,7 @@ Scene.prototype.toXML = function (serializer) {
         this.penColorModel === 'hsl' ? ' colormodel="hsl"' : '',
         this.hideEmptyCategories ? ' empty="false"' : '',
         this.hideSprites ? ' blocksonly="true"' : '',
+        this.enforceTypes ? ' strict="true"' : '',
         this.notes || '',
         serializer.paletteToXML(this.customCategories),
         Object.keys(this.hiddenPrimitives).reduce(
@@ -2645,7 +2652,7 @@ CustomBlockDefinition.prototype.toXML = function (serializer) {
     }
 
     return serializer.format(
-        '<block-definition s="@" type="@" category="@"%%%%%>' +
+        '<block-definition s="@" type="@" category="@"%%%%%%%>' +
             '%' +
             (this.variableNames.length ? '<variables>%</variables>' : '@') +
             '<header>@</header>' +
@@ -2662,8 +2669,12 @@ CustomBlockDefinition.prototype.toXML = function (serializer) {
         this.primitive && this.isGlobal ?
             ' primitive="' + this.primitive + '"'
             : '',
+        this.reports ?
+            ' reports="' + this.reports + '"'
+            : '',
         this.isHelper ? ' helper="true"' : '',
         this.spaceAbove ? ' space="true"' : '',
+        this.enforceTypes ? ' strict="true"' : '',
         this.type === 'hat' && this.semantics === 'rule' ?
             ' semantics="rule"' : '',
         this.comment ? this.comment.toXML(serializer) : '',

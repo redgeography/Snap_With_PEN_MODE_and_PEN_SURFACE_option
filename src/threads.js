@@ -66,7 +66,7 @@ CustomHatBlockMorph*/
 
 /*jshint esversion: 11, bitwise: false, evil: true*/
 
-modules.threads = '2026-February-10';
+modules.threads = '2026-March-02';
 
 var ThreadManager;
 var Process;
@@ -4896,14 +4896,22 @@ Process.prototype.getLastMessage = function () {
 // Process type inference
 
 Process.prototype.reportIsA = function (thing, typeString) {
-    var choice = this.inputOption(typeString);
+    var choice = this.inputOption(typeString),
+        primType;
     switch (choice) {
     case 'agent':
         return isSnapObject(thing);
     case 'script':
         return thing instanceof Context;
     default:
-        return this.reportTypeOf(thing) === choice;
+        primType = this.reportTypeOf(thing);
+        return primType === choice || // support ADTs (user defined structs)
+            primType === 'list' &&
+                (this.reportListItem('_type', thing) === typeString ||
+                    this.reportIsA(
+                        this.reportListItem(['parent'], thing),
+                        typeString
+                    ));
     }
 };
 
@@ -9065,7 +9073,14 @@ Process.prototype.slotType = function (spec) {
         '19':           19,
         'parameter':    19, // spec
         // mnemonics:
-        'parm':         19
+        'parm':         19,
+
+        '20':           20,
+        'adt':          20, // spec
+        // mnemonics:
+        '{}':           20,
+        'dict':         20,
+        'struct':       20
 
     }[key];
     if (num === undefined) {
@@ -9078,7 +9093,7 @@ Process.prototype.slotSpec = function (num) {
     // answer a spec indicating the shape of a slot represented by a number
     // or by a textual mnemomic
     var prefix = '',
-        id = this.reportIsA(num, 'text') ? this.slotType(num) : +num,
+        id,
         spec;
 
     if (num instanceof List) { // input group
@@ -9087,6 +9102,7 @@ Process.prototype.slotSpec = function (num) {
         ).join('');
     }
 
+    id = this.reportIsA(num, 'text') ? this.slotType(num) : +num;
     if (id >= 100) {
         prefix = '%mult';
         id -= 100;
@@ -9094,7 +9110,7 @@ Process.prototype.slotSpec = function (num) {
 
     spec = ['s', 'n', 'b', 'l', 'mlt', 'cs', 'cmdRing', 'repRing', 'predRing',
     'anyUE', 'boolUE', 'obj', 'upvar', 'clr', 'scriptVars', 'loop', 'receive',
-    'send', 'elseif', 'parameter'][id];
+    'send', 'elseif', 'parameter', 'adt'][id];
 
     if (spec === undefined) {
         return null;

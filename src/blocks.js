@@ -44,6 +44,7 @@
             ScriptsMorph
             SyntaxElementMorph
                 ArgMorph
+                    ADT_SlotMorph
                     ArgLabelMorph
                     BooleanSlotMorph
                     ColorSlotMorph
@@ -100,6 +101,7 @@
         ArrowMorph
         TextSlotMorph
         ColorSlotMorph
+        ADT_SlotMorph
         TemplateSlotMorph
         BlockHighlightMorph
         MultiArgMorph
@@ -162,7 +164,7 @@ CustomHatBlockMorph, GrayPaletteMorph, ZOOM*/
 
 // Global stuff ////////////////////////////////////////////////////////
 
-modules.blocks = '2026-February-13';
+modules.blocks = '2026-March-13';
 
 var SyntaxElementMorph;
 var BlockMorph;
@@ -324,13 +326,17 @@ SyntaxElementMorph.prototype.labelParts = {
         type: 'input',
         tags: 'numeric'
     },
+    '%nUE': {
+        type: 'input',
+        tags: 'numeric unevaluated'
+    },
     '%ns': {
         type: 'input',
         tags: 'numstring'
     },
     '%txt': {
         type: 'input',
-        tags: 'landscape'
+        tags: 'textual' // 'landscape'
     },
     '%anyUE': {
         type: 'input',
@@ -846,7 +852,8 @@ SyntaxElementMorph.prototype.labelParts = {
     },
     '%typ': {
         type: 'input',
-        tags: 'read-only static',
+        tags: 'textual',
+        // tags: 'read-only static',
         menu: 'typesMenu'
     },
     '%mapValue': {
@@ -1188,6 +1195,9 @@ SyntaxElementMorph.prototype.labelParts = {
     '%clr': {
         type: 'color'
     },
+    '%adt': {
+        type: 'adt'
+    },
     '%br': {
         type: 'break'
     },
@@ -1281,7 +1291,7 @@ SyntaxElementMorph.prototype.labelParts = {
     },
     '%words': {
         type: 'multi',
-        slots: '%s',
+        slots: '%txt', // '%s'
         defaults: 2
     },
     '%lists': {
@@ -1471,6 +1481,12 @@ SyntaxElementMorph.prototype.debugCachedInputs = function () {
     }
 };
 
+SyntaxElementMorph.prototype.allBlocks = function () {
+    // answer blocks of all children
+    return this.allChildren().slice(0).reverse().filter(child =>
+        child instanceof BlockMorph);
+};
+
 SyntaxElementMorph.prototype.allInputs = function () {
     // answer arguments and nested reporters of all children
     return this.allChildren().slice(0).reverse().filter(child =>
@@ -1478,6 +1494,15 @@ SyntaxElementMorph.prototype.allInputs = function () {
             (child instanceof ReporterBlockMorph &&
                 child !== this)
     );
+};
+
+SyntaxElementMorph.prototype.allBlockInputs = function () {
+    var all = [];
+    this.inputs().forEach(m => {
+        all.push(m);
+        all = all.concat(m.allInputs());
+    });
+    return all;
 };
 
 SyntaxElementMorph.prototype.allEmptySlots = function () {
@@ -1596,6 +1621,7 @@ SyntaxElementMorph.prototype.revertToDefaultInput = function (arg, noValues) {
             if (!noValues &&
                 (deflt instanceof InputSlotMorph ||
                 deflt instanceof BooleanSlotMorph ||
+                deflt instanceof ADT_SlotMorph ||
                 deflt instanceof ColorSlotMorph)
             ) {
                 deflt.setContents(
@@ -1612,11 +1638,14 @@ SyntaxElementMorph.prototype.revertToDefaultInput = function (arg, noValues) {
                 def = rcvr.getMethod(this.parent.blockSpec);
             }
         }
+        // if (def && deflt instanceof InputSlotMorph && !deflt.isUnevaluated) {
         if (def && deflt instanceof InputSlotMorph && !deflt.isUnevaluated) {
             deflt.setChoices.apply(
                 deflt,
                 def.inputOptionsOfIdx(this.parent.inputs().indexOf(this))
             );
+        } else if (deflt instanceof ADT_SlotMorph) {
+            deflt.setContents(this.defaultValue);
         }
     }
     if (deflt instanceof MultiArgMorph && !inp) {
@@ -1905,6 +1934,7 @@ SyntaxElementMorph.prototype.setLabelColor = function (
             morph.setColor(textColor);
         } else if (morph instanceof MultiArgMorph
                 || morph instanceof ArgLabelMorph
+                || morph instanceof ADT_SlotMorph
                 || (morph instanceof SymbolMorph && !morph.isProtectedLabel)
                 || (morph instanceof InputSlotMorph
                     && morph.isReadOnly)) {
@@ -2045,6 +2075,9 @@ SyntaxElementMorph.prototype.labelPart = function (spec) {
         case 'color':
             part = new ColorSlotMorph();
             break;
+        case 'adt':
+            part = new ADT_SlotMorph();
+            break;
         case 'break':
             part = new Morph();
             part.setExtent(ZERO);
@@ -2086,7 +2119,7 @@ SyntaxElementMorph.prototype.labelPart = function (spec) {
 
         // apply the tags
         // ---------------
-        // input: numeric, numstring, alphanum, read-only, unevaluated,
+        // input: numeric, textual, numstring, alphanum, read-only, unevaluated,
         //        landscape, static
         // text entry: monospace
         // boolean: unevaluated, static
@@ -2107,6 +2140,9 @@ SyntaxElementMorph.prototype.labelPart = function (spec) {
                     switch (tag) {
                     case 'numeric':
                         part.isNumeric = true;
+                        break;
+                    case 'textual':
+                        part.isTextual = true;
                         break;
                     case 'alphanum':
                         part.isNumeric = true;
@@ -2627,6 +2663,8 @@ SyntaxElementMorph.prototype.showBubble = function (value, exportPic, target) {
                     this.changed();
                 }
             };
+        } else if (value.isCustomSwatch) {
+            morphToShow = value;
         } else {
             img = value.fullImage();
             morphToShow = new Morph();
@@ -3145,9 +3183,11 @@ BlockSymbolMorph.prototype.getShadowRenderColor =
     %cl     - C-shaped, auto-reifying, rejects reporters
     %cla    - C-shaped with loop arrows, auto-reifying, rejects reporters
     %clr    - interactive color slot
+    %adt    - chameleon colored oval slot displaying a typestring
     %t      - inline variable reporter template
     %anyUE  - white rectangular type-in slot, unevaluated if replaced
     %boolUE - chameleon colored hexagonal slot, unevaluated if replaced
+    %nUE    - white oval numerical slot, unevaluated if replaced
     %f      - round function slot, unevaluated if replaced,
     %r      - round reporter slot
     %p      - hexagonal predicate slot
@@ -3224,6 +3264,7 @@ BlockMorph.prototype.init = function () {
     this.selector = null; // name of method to be triggered
     this.blockSpec = ''; // formal description of label and arguments
     this.comment = null; // optional "sticky" comment morph
+    this.enforceTypes = false;
 
     // not to be persisted:
     this.instantiationSpec = null; // spec to set upon fullCopy() of template
@@ -7638,6 +7679,7 @@ function ReporterBlockMorph(isPredicate) {
 ReporterBlockMorph.prototype.init = function (isPredicate) {
     ReporterBlockMorph.uber.init.call(this);
     this.isPredicate = isPredicate || false;
+    this.reports = isPredicate ? 'Boolean' : 'any'; // optional return type
 
     this.bounds.setExtent(new Point(50, 22).multiplyBy(this.scale));
     this.fixLayout();
@@ -7747,6 +7789,7 @@ ReporterBlockMorph.prototype.isUnevaluated = function () {
     var spec = this.getSlotSpec();
     return spec === '%anyUE' ||
         spec === '%boolUE' ||
+        spec === '%nUE' ||
         spec === '%f';
 };
 
@@ -8516,6 +8559,10 @@ RingMorph.prototype.isEmptySlot = function () {
         (this.getSlotSpec().indexOf('Ring') > 0);
 };
 
+RingMorph.prototype.matches = function (typestring) {
+    return ['command', 'script', 'any'].includes(typestring);
+};
+
 // RingMorph zebra coloring
 
 RingMorph.prototype.fixBlockColor = function (nearest, isForced) {
@@ -8602,6 +8649,7 @@ ScriptsMorph.prototype.cleanUpSpacing = 15;
 ScriptsMorph.prototype.isPreferringEmptySlots = true;
 ScriptsMorph.prototype.enableKeyboard = true;
 ScriptsMorph.prototype.enableNestedAutoWrapping = true;
+ScriptsMorph.prototype.enforceTypes = false;
 ScriptsMorph.prototype.feedbackColor = WHITE;
 
 // ScriptsMorph instance creation:
@@ -8845,14 +8893,22 @@ ScriptsMorph.prototype.closestInput = function (reporter, hand) {
                 (child.fullBounds().intersects(fb))
         ),
         blackList = reporter.allInputs(),
+        all = [],
         handPos,
-        target,
-        all;
+        target;
 
-    all = [];
     stacks.forEach(stack =>
-        all = all.concat(stack.allInputs())
+        stack.allBlocks().forEach(block => {
+            if (ScriptsMorph.prototype.enforceTypes || block.enforceTypes) {
+                all = all.concat(block.allBlockInputs().filter(m =>
+                    m.matches && m.matches(reporter.reports)
+                ));
+            } else {
+                all = all.concat(block.allBlockInputs());
+            }
+        })
     );
+
     if (all.length === 0) {return null; }
 
     function touchingVariadicArrowsIfAny(inp, point) {
@@ -10004,6 +10060,11 @@ ArgMorph.prototype.isEmptySlot = function () {
     return this.type !== null;
 };
 
+ArgMorph.prototype.matches = function (typestring) {
+    var expected = [this.type === 'list' ? 'list' : 'actor', 'any'];
+    return expected.includes(typestring);
+};
+
 // ArgMorph op-sequence analysis
 
 ArgMorph.prototype.unwind = function () {
@@ -11149,6 +11210,7 @@ InputSlotMorph.prototype.init = function (
     this.choices = choiceDict || null; // object, function or selector
     this.oldContentsExtent = contents.extent();
     this.isNumeric = isNumeric || false;
+    this.isTextual = false;
     this.evaluateAsString = false; // special case for RANDOM NUMBER reporter
     this.isAlphanumeric = false; // temporary override for allowing text
     this.isReadOnly = isReadOnly || false;
@@ -11170,10 +11232,12 @@ InputSlotMorph.prototype.init = function (
 
 InputSlotMorph.prototype.getSpec = function () {
     if (this.isUnevaluated) {
-        return '%anyUE';
+        return this.isNumeric ? '%nUE': '%anyUE';
     }
     if (this.isNumeric) {
         return '%n';
+    } else if (this.isTextual) {
+        return '%txt';
     }
     return '%s'; // default
 };
@@ -11379,6 +11443,18 @@ InputSlotMorph.prototype.menuFromDict = function (
        			menu.addLine();
 			    menu.items.push(dial);
             	menu.addLine();
+            } else if (key.indexOf('§_angle') === 0) {
+			    dial = new DialMorph();
+                dial.bearings = 'math';
+    			dial.rootForGrab = function () {return this; };
+    			dial.target = this;
+       			dial.action = update;
+       			dial.fillColor = this.parent.color;
+          		dial.setRadius(this.fontSize * 3);
+				dial.setValue(+this.evaluate(), false, true);
+       			menu.addLine();
+			    menu.items.push(dial);
+            	menu.addLine();
             } else if (key.indexOf('§_') === 0) {
                 // prefixing a key with '§_' only makes the menu item
                 // appear when the user holds down the shift-key
@@ -11565,7 +11641,7 @@ InputSlotMorph.prototype.dynamicContents = function () {
     // fully evaluate the block's inputs, including embedded reporters, if any
     vars = new InputList(block, names);
 
-    // evaluate the script that makes the menu
+    // evaluate the script that reports the dynamic content
     stage.threads.startProcess(
         script,
         rcvr,
@@ -12273,6 +12349,11 @@ InputSlotMorph.prototype.directionDialMenu = function (searching) {
     return {'§_dir': null};
 };
 
+InputSlotMorph.prototype.angleDialMenu = function (searching) {
+    if (searching) {return {}; }
+    return {'§_angle': null};
+};
+
 InputSlotMorph.prototype.audioMenu = function (searching) {
     var dict = {
         'volume' : ['volume'],
@@ -12623,6 +12704,15 @@ InputSlotMorph.prototype.evaluateOption = function () {
 
 InputSlotMorph.prototype.isEmptySlot = function () {
     return this.contents().text === '' && !this.selectedBlock && !this.symbol;
+};
+
+InputSlotMorph.prototype.matches = function (typestring) {
+    if (this.isNumeric) {
+        return ['number', 'any'].includes(typestring);
+    } else if (this.isTextual) {
+        return ['text', 'number', 'any'].includes(typestring);
+    }
+    return true;
 };
 
 // InputSlotMorph single-stepping:
@@ -13046,6 +13136,7 @@ TemplateSlotMorph.prototype.init = function (name) {
     }
     template.setSpec(this.labelString);
     template.selector = 'reportGetVar';
+    template.reports = 'any';
     TemplateSlotMorph.uber.init.call(this);
     this.add(template);
     this.fixLayout();
@@ -13335,6 +13426,10 @@ BooleanSlotMorph.prototype.evaluate = function () {
 
 BooleanSlotMorph.prototype.isEmptySlot = function () {
     return this.value === null;
+};
+
+BooleanSlotMorph.prototype.matches = function (typestring) {
+    return ['Boolean', 'any'].includes(typestring);
 };
 
 BooleanSlotMorph.prototype.isBinary = function () {
@@ -14061,6 +14156,10 @@ TextSlotMorph.prototype.contents = function () {
     );
 };
 
+TextSlotMorph.prototype.matches = function (typestring) {
+    return ['text', 'number'].includes(typestring);
+};
+
 // TextSlotMorph events:
 
 TextSlotMorph.prototype.layoutChanged = function () {
@@ -14181,6 +14280,10 @@ ColorSlotMorph.prototype.evaluate = function () {
     return this.color;
 };
 
+ColorSlotMorph.prototype.matches = function (typestring) {
+    return ['color', 'any'].includes(typestring);
+};
+
 // ColorSlotMorph drawing:
 
 ColorSlotMorph.prototype.fixLayout = function () {
@@ -14219,6 +14322,139 @@ ColorSlotMorph.prototype.render = function (ctx) {
 
 ColorSlotMorph.prototype.drawRectBorder =
     InputSlotMorph.prototype.drawRectBorder;
+
+// ADT_SlotMorph //////////////////////////////////////////////////////
+
+/*
+    I am an oval-shaped input slot for a user-defined data structure (ADT).
+    I can display a type-string indicating the kind of data I'm expecting.
+    I am not directly user-editable.
+
+    my block spec is %adt
+
+    evaluate() returns my typestring or "ADT"
+*/
+
+// ADT_SlotMorph  inherits from ArgMorph:
+
+ADT_SlotMorph.prototype = new ArgMorph();
+ADT_SlotMorph.prototype.constructor = ADT_SlotMorph;
+ADT_SlotMorph.uber = ArgMorph.prototype;
+
+// ADT_SlotMorph  instance creation:
+
+function ADT_SlotMorph(typeString) {
+    this.init(typeString);
+}
+
+ADT_SlotMorph.prototype.init = function (typeString) {
+    var contents = new InputSlotStringMorph('');
+    contents.fontSize = this.fontSize;
+    contents.isItalic = true;
+    contents.isShowingBlanks = false;
+    contents.shadowOffset = new Point(1, 1);
+    ADT_SlotMorph.uber.init.call(this);
+    this.add(contents);
+    contents.isEditable = false;
+    contents.isDraggable = false;
+    contents.disableSelecting();
+    this.setContents(typeString || 'ADT');
+    this.fixLayout();
+};
+
+ADT_SlotMorph.prototype.getSpec = function () {
+    return '%adt';
+};
+
+ADT_SlotMorph.prototype.contents = InputSlotMorph.prototype.contents;
+
+ADT_SlotMorph.prototype.setContents = function (typeString = 'ADT') {
+    var cnts = this.contents(),
+        block = this.parentThatIsA(BlockMorph); // could be inside a multi-arg
+    cnts.text = typeString;
+    cnts.fixLayout();
+    if (block) {
+        block.fixLabelColor();
+    }
+};
+
+ADT_SlotMorph.prototype.evaluate = function () {
+    return new List();
+};
+
+ADT_SlotMorph.prototype.matches = function (typestring) {
+    return [this.contents().text, 'any'].includes(typestring);
+};
+
+ADT_SlotMorph.prototype.isEmptySlot = function () {
+    return true;
+};
+
+ADT_SlotMorph.prototype.fixLayout = function () {
+    var width, height,
+        contents = this.contents(),
+        tp = this.topBlock();
+
+    height = contents.height() + this.edge * 2;
+    width = contents.width() + height;
+    this.bounds.setExtent(new Point(width, height));
+
+    contents.setPosition(new Point(
+        height * 0.4,
+        this.edge
+    ).add(this.position()));
+
+    if (this.parent && this.parent.fixLayout) {
+        tp.fullChanged();
+        this.parent.fixLayout();
+        tp.fullChanged();
+    }
+};
+
+ADT_SlotMorph.prototype.render = function (ctx) {
+    var borderColor,
+        r;
+
+    if (this.parent) {
+        borderColor = this.parent.color;
+    } else {
+        borderColor = new Color(120, 120, 120);
+    }
+    ctx.fillStyle = borderColor.darker().toString();
+
+    // cache my border colors
+    this.cachedClr = borderColor.toString();
+    this.cachedClrBright = borderColor.lighter(this.contrast)
+        .toString();
+    this.cachedClrDark = borderColor.darker(this.contrast).toString();
+
+    r = Math.max((this.height() - (this.edge * 2)) / 2, 0);
+    ctx.beginPath();
+    ctx.arc(
+        r + this.edge,
+        r + this.edge,
+        r,
+        radians(90),
+        radians(-90),
+        false
+    );
+    ctx.arc(
+        this.width() - r - this.edge,
+        r + this.edge,
+        r,
+        radians(-90),
+        radians(90),
+        false
+    );
+    ctx.closePath();
+    ctx.fill();
+    if (!MorphicPreferences.isFlat) {
+        this.drawRoundBorder(ctx);
+    }
+};
+
+ADT_SlotMorph.prototype.drawRoundBorder =
+    InputSlotMorph.prototype.drawRoundBorder;
 
 // BlockHighlightMorph /////////////////////////////////////////////////
 
@@ -15124,7 +15360,7 @@ MultiArgMorph.prototype.slotSpecFor = function (index) {
 };
 
 MultiArgMorph.prototype.defaultValueFor = function (index) {
-    var dta = this.defaultValueDataFor(index);
+    var dta = this.defaultValueDataFor(this.slotSpec === '%adt' ? 0 : index);
     return this.parentThatIsA(BlockMorph)?.definition?.selector ?
         localize(dta) : dta;
 };
@@ -15336,6 +15572,10 @@ MultiArgMorph.prototype.evaluate = function () {
 
 MultiArgMorph.prototype.isEmptySlot = function () {
     return this.canBeEmpty ? this.inputs().length === 0 : false;
+};
+
+MultiArgMorph.prototype.matches = function (typestring) {
+    return ['list', 'any'].includes(typestring);
 };
 
 // MultiArgMorph op-sequence analysis
@@ -15886,6 +16126,9 @@ ReporterSlotMorph.prototype.emptySlot = function () {
         (this.fontSize + this.edge * 2) * 2 - shrink,
         this.fontSize + this.edge * 2 - shrink
     ));
+    empty.matches = (typestring) =>
+        this.isPredicate ? ['Boolean', 'any'].includes(typestring)
+        : true;
     return empty;
 };
 
